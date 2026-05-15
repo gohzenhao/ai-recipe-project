@@ -1,14 +1,20 @@
 """Django settings for config project."""
 
+import os
+import sys
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from dotenv import load_dotenv
-import os
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 load_dotenv(BASE_DIR / ".env", override=True)
+
+# Persistent connections must be disabled during the test command — Neon's
+# pooler otherwise holds the connection open and blocks DROP DATABASE at
+# teardown.
+RUNNING_TESTS = "test" in sys.argv
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -87,7 +93,7 @@ def _database_from_url(url: str) -> dict:
         "HOST": parsed.hostname or "",
         "PORT": str(parsed.port) if parsed.port else "",
         "OPTIONS": options,
-        "CONN_MAX_AGE": 60,
+        "CONN_MAX_AGE": 0 if RUNNING_TESTS else 60,
     }
 
 
@@ -109,5 +115,9 @@ USE_TZ = True
 STATIC_URL = "static/"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+AUTH_USER_MODEL = "api.User"
+
+TEST_RUNNER = "config.test_runner.NeonDiscoverRunner"
 
 CORS_ALLOWED_ORIGINS = _env_list("CORS_ALLOWED_ORIGINS", ["http://localhost:5173"])
