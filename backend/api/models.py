@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from django.conf import settings
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
 
@@ -59,3 +60,70 @@ class User(AbstractUser):
 
     def __str__(self) -> str:
         return self.email
+
+
+class Recipe(models.Model):
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="recipes",
+    )
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    servings = models.PositiveSmallIntegerField(null=True, blank=True)
+    prep_time_minutes = models.PositiveIntegerField(null=True, blank=True)
+    cook_time_minutes = models.PositiveIntegerField(null=True, blank=True)
+    hero_image_url = models.URLField(blank=True)
+    instructions = models.JSONField(default=list)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return self.title
+
+
+class RecipeIngredient(models.Model):
+    recipe = models.ForeignKey(
+        Recipe,
+        on_delete=models.CASCADE,
+        related_name="ingredients",
+    )
+    position = models.PositiveSmallIntegerField()
+    qty = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True)
+    unit = models.CharField(max_length=32, blank=True)
+    item_text = models.CharField(max_length=200)
+    note = models.CharField(max_length=200, blank=True)
+
+    class Meta:
+        ordering = ["position"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["recipe", "position"],
+                name="unique_recipe_ingredient_position",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.position}. {self.item_text}"
+
+
+class RecipeSource(models.Model):
+    class Method(models.TextChoices):
+        MANUAL = "manual", "Manual"
+        URL = "url", "URL"
+        IMAGE = "image", "Image"
+
+    recipe = models.ForeignKey(
+        Recipe,
+        on_delete=models.CASCADE,
+        related_name="sources",
+    )
+    method = models.CharField(max_length=16, choices=Method.choices)
+    source_url = models.URLField(blank=True)
+    source_image_url = models.URLField(blank=True)
+    model_version = models.CharField(max_length=64, blank=True)
+    extracted_at = models.DateTimeField(auto_now_add=True)
+    is_current = models.BooleanField(default=True)
+
+    def __str__(self) -> str:
+        return f"{self.recipe_id}:{self.method}@{self.extracted_at:%Y-%m-%d}"
