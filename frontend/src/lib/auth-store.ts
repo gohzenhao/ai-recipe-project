@@ -1,21 +1,24 @@
 import { create } from 'zustand'
 
-const TOKEN_KEY = 'auth_token'
+export type User = {
+  id: number
+  email: string
+  display_name: string
+  avatar_url: string
+}
+
+export type AuthStatus = 'loading' | 'authed' | 'anon'
 
 type AuthState = {
-  token: string | null
-  setToken: (token: string) => void
-  clearToken: () => void
+  user: User | null
+  status: AuthStatus
+  setUser: (user: User) => void
+  clear: () => void
 }
 
 export const useAuthStore = create<AuthState>()((set) => ({
-  token: localStorage.getItem(TOKEN_KEY),
-  setToken: (token) => {
-    localStorage.setItem(TOKEN_KEY, token)
-    set({ token })
-  },
-  clearToken: () => {
-    localStorage.removeItem(TOKEN_KEY)
-    set({ token: null })
-  },
+  user: null,
+  status: 'loading',
+  setUser: (user) => set({ user, status: 'authed' }),
+  clear: () => set({ user: null, status: 'anon' }),
 }))

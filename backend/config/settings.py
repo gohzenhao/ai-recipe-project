@@ -121,3 +121,5 @@ AUTH_USER_MODEL = "api.User"
 TEST_RUNNER = "config.test_runner.NeonDiscoverRunner"
 
 CORS_ALLOWED_ORIGINS = _env_list("CORS_ALLOWED_ORIGINS", ["http://localhost:5173"])
+CORS_ALLOW_CREDENTIALS = True
+

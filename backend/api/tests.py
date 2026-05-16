@@ -1,6 +1,15 @@
+import json
+
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
-from django.test import TestCase
+from django.test import Client, TestCase
+
+from .auth_services import (
+    EmailAlreadyInUseError,
+    authenticate_credentials,
+    register_user,
+)
 
 User = get_user_model()
 
@@ -58,3 +67,161 @@ class UserEmailUniquenessTests(TestCase):
                 password="secondpass-2",
                 display_name="Second",
             )
+
+    def test_duplicate_email_different_case_raises_integrity_error(self) -> None:
+        User.objects.create_user(
+            email="dup2@example.com",
+            password="firstpass-1",
+            display_name="First",
+        )
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            User.objects.create_user(
+                email="DUP2@example.com",
+                password="secondpass-2",
+                display_name="Second",
+            )
+
+
+class UserManagerEmailCanonicalizationTests(TestCase):
+    def test_create_user_lowercases_full_email(self) -> None:
+        user = User.objects.create_user(
+            email="Alice@Example.com",
+            password="s3cret-pass",
+            display_name="Alice",
+        )
+        self.assertEqual(user.email, "alice@example.com")
+
+    def test_create_user_strips_surrounding_whitespace(self) -> None:
+        user = User.objects.create_user(
+            email="  alice2@example.com  ",
+            password="s3cret-pass",
+            display_name="Alice",
+        )
+        self.assertEqual(user.email, "alice2@example.com")
+
+
+class AuthenticateCredentialsTests(TestCase):
+    def setUp(self) -> None:
+        self.password = "correct-horse-99"
+        self.user = User.objects.create_user(
+            email="alice@example.com",
+            password=self.password,
+            display_name="Alice",
+        )
+
+    def test_authenticate_canonicalizes_email_at_lookup(self) -> None:
+        result = authenticate_credentials("Alice@Example.com", self.password)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.pk, self.user.pk)
+
+    def test_authenticate_returns_none_on_wrong_password(self) -> None:
+        result = authenticate_credentials("alice@example.com", "wrong-password")
+        self.assertIsNone(result)
+
+    def test_authenticate_returns_none_on_unknown_email(self) -> None:
+        result = authenticate_credentials("nobody@example.com", "anything")
+        self.assertIsNone(result)
+
+
+class RegisterUserTests(TestCase):
+    def test_register_user_happy_path(self) -> None:
+        user = register_user("Bob@Example.com", "lighthouse-orbit", "Bob")
+        self.assertEqual(user.email, "bob@example.com")
+        self.assertTrue(user.check_password("lighthouse-orbit"))
+        self.assertEqual(user.display_name, "Bob")
+
+    def test_register_user_rejects_duplicate_email_any_case(self) -> None:
+        register_user("dup-svc@example.com", "lighthouse-orbit", "First")
+        with self.assertRaises(EmailAlreadyInUseError):
+            register_user("DUP-SVC@example.com", "lighthouse-orbit", "Second")
+
+    def test_register_user_rejects_weak_password(self) -> None:
+        with self.assertRaises(ValidationError):
+            register_user("weak@example.com", "abc", "Weak")
+
+
+class AuthEndpointTests(TestCase):
+    def setUp(self) -> None:
+        self.password = "correct-horse-99"
+        self.user = User.objects.create_user(
+            email="alice@example.com",
+            password=self.password,
+            display_name="Alice",
+        )
+        # `enforce_csrf_checks=True` so the test client actually validates the
+        # X-CSRFToken header — otherwise our "missing token gets rejected"
+        # assertion would be a no-op.
+        self.client = Client(enforce_csrf_checks=True)
+
+    def _seed_csrf(self) -> str:
+        """Hit GET /me so the CSRF cookie is set on the client, return token."""
+        response = self.client.get("/api/auth/me")
+        self.assertIn("csrftoken", response.cookies)
+        return response.cookies["csrftoken"].value
+
+    def test_login_success_returns_user_and_sets_session_cookie(self) -> None:
+        csrf = self._seed_csrf()
+        response = self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"email": "alice@example.com", "password": self.password}),
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf,
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["email"], "alice@example.com")
+        self.assertEqual(body["display_name"], "Alice")
+        self.assertEqual(body["avatar_url"], "")
+        self.assertIn("sessionid", response.cookies)
+        # Follow-up GET /me should now be authenticated.
+        me = self.client.get("/api/auth/me")
+        self.assertEqual(me.status_code, 200)
+        self.assertEqual(me.json()["email"], "alice@example.com")
+
+    def test_login_with_mixed_case_email_succeeds(self) -> None:
+        csrf = self._seed_csrf()
+        response = self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"email": "Alice@Example.com", "password": self.password}),
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("sessionid", response.cookies)
+
+    def test_login_with_wrong_password_returns_401_and_no_session(self) -> None:
+        csrf = self._seed_csrf()
+        response = self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"email": "alice@example.com", "password": "wrong"}),
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf,
+        )
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json(), {"detail": "Invalid email or password"})
+        session_cookie = response.cookies.get("sessionid")
+        # A fresh sessionid should not have been set on the failure branch.
+        self.assertTrue(session_cookie is None or session_cookie.value == "")
+
+    def test_login_without_csrf_header_is_rejected(self) -> None:
+        # Seed the CSRF cookie but deliberately omit the matching header.
+        self._seed_csrf()
+        response = self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"email": "alice@example.com", "password": self.password}),
+            content_type="application/json",
+        )
+        self.assertGreaterEqual(response.status_code, 400)
+        self.assertLess(response.status_code, 500)
+
+    def test_me_unauthenticated_returns_401_and_sets_csrf_cookie(self) -> None:
+        response = self.client.get("/api/auth/me")
+        self.assertEqual(response.status_code, 401)
+        self.assertIn("csrftoken", response.cookies)
+
+    def test_me_authenticated_returns_user_and_sets_csrf_cookie(self) -> None:
+        self.client.force_login(self.user)
+        response = self.client.get("/api/auth/me")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["email"], "alice@example.com")
+        self.assertIn("csrftoken", response.cookies)

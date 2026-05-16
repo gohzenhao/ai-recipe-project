@@ -21,7 +21,11 @@ class UserManager(BaseUserManager["User"]):
     ) -> User:
         if not email:
             raise ValueError("Email is required")
-        email = self.normalize_email(email)
+        # Lowercase the whole address (not just the domain like BaseUserManager
+        # does) so case-mismatches at login are impossible by construction.
+        email = email.strip().lower()
+        if not email:
+            raise ValueError("Email is required")
         user = self.model(email=email, **extra_fields)
         user.set_password(password)
         user.save(using=self._db)
