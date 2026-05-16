@@ -27,7 +27,7 @@ jobs:
 
     env:
       DJANGO_SECRET_KEY: ci-not-a-real-secret
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
 
     defaults:
       run:
