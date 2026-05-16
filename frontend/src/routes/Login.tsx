@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { ApiError } from '@/lib/api-client'
 import { login } from '@/lib/auth'
 
@@ -66,6 +66,12 @@ export function Login() {
         >
           {submitting ? 'Signing in…' : 'Sign in'}
         </button>
+        <p className="text-sm text-muted-foreground text-center">
+          No account?{' '}
+          <Link to="/signup" className="underline">
+            Create an account
+          </Link>
+        </p>
       </form>
     </main>
   )

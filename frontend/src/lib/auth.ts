@@ -2,12 +2,27 @@ import { apiFetch, ApiError } from '@/lib/api-client'
 import { useAuthStore, type User } from '@/lib/auth-store'
 
 export type LoginPayload = { email: string; password: string }
+export type SignupPayload = {
+  email: string
+  password: string
+  display_name: string
+}
 
 export async function login(payload: LoginPayload): Promise<User> {
   const user = await apiFetch<User>('/auth/login', {
     method: 'POST',
     body: JSON.stringify(payload),
   })
+  useAuthStore.getState().setUser(user)
+  return user
+}
+
+export async function signup(payload: SignupPayload): Promise<User> {
+  const user = await apiFetch<User>('/auth/signup', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+  // Backend already established the session, so no follow-up fetchMe needed.
   useAuthStore.getState().setUser(user)
   return user
 }

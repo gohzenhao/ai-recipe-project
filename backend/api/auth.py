@@ -4,14 +4,19 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.contrib.auth import login as django_login
+from django.core.exceptions import ValidationError
 from django.http import HttpRequest
 from django.views.decorators.csrf import ensure_csrf_cookie
 from ninja import Router
 from ninja.decorators import decorate_view
 from ninja.security.apikey import APIKeyCookie
 
-from .auth_schemas import LoginIn, UserOut
-from .auth_services import authenticate_credentials
+from .auth_schemas import LoginIn, SignupIn, UserOut
+from .auth_services import (
+    EmailAlreadyInUseError,
+    authenticate_credentials,
+    register_user,
+)
 from .models import User
 
 router = Router()
@@ -64,6 +69,43 @@ def login(request: HttpRequest, payload: LoginIn):
         return 401, {"detail": "Invalid email or password"}
     django_login(request, user)
     return 200, _user_out(user)
+
+
+@router.post("/signup", auth=_CsrfAuth(), response={200: UserOut, 400: dict})
+def signup(request: HttpRequest, payload: SignupIn):
+    try:
+        user = register_user(payload.email, payload.password, payload.display_name)
+    except EmailAlreadyInUseError:
+        return 400, {
+            "detail": [
+                {
+                    "loc": ["body", "payload", "email"],
+                    "msg": "Email already in use",
+                    "type": "value_error.email_taken",
+                }
+            ]
+        }
+    except ValidationError as exc:
+        # Django's password validators raise ValidationError with one or more
+        # sub-errors; surface each as a field-level entry on `password`.
+        return 400, {
+            "detail": [
+                {
+                    "loc": ["body", "payload", "password"],
+                    "msg": message,
+                    "type": f"value_error.{code or 'password_invalid'}",
+                }
+                for message, code in _iter_validator_errors(exc)
+            ]
+        }
+    django_login(request, user)
+    return 200, _user_out(user)
+
+
+def _iter_validator_errors(exc: ValidationError):
+    """Yield (message, code) pairs from a Django ValidationError."""
+    for err in exc.error_list:
+        yield err.message % (err.params or ()), err.code
 
 
 # `/me` doubles as the CSRF-cookie seeder for the SPA's cold-load probe —

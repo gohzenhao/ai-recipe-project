@@ -225,3 +225,134 @@ class AuthEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["email"], "alice@example.com")
         self.assertIn("csrftoken", response.cookies)
+
+
+class SignupEndpointTests(TestCase):
+    def setUp(self) -> None:
+        self.client = Client(enforce_csrf_checks=True)
+
+    def _seed_csrf(self) -> str:
+        response = self.client.get("/api/auth/me")
+        self.assertIn("csrftoken", response.cookies)
+        return response.cookies["csrftoken"].value
+
+    def _post_signup(self, payload: dict, csrf: str | None = None):
+        kwargs = {
+            "data": json.dumps(payload),
+            "content_type": "application/json",
+        }
+        if csrf is not None:
+            kwargs["HTTP_X_CSRFTOKEN"] = csrf
+        return self.client.post("/api/auth/signup", **kwargs)
+
+    def test_signup_success_returns_user_and_logs_in(self) -> None:
+        csrf = self._seed_csrf()
+        response = self._post_signup(
+            {
+                "email": "newbie@example.com",
+                "password": "lighthouse-orbit",
+                "display_name": "Newbie",
+            },
+            csrf=csrf,
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(
+            set(body.keys()), {"id", "email", "display_name", "avatar_url"}
+        )
+        self.assertEqual(body["email"], "newbie@example.com")
+        self.assertEqual(body["display_name"], "Newbie")
+        self.assertEqual(body["avatar_url"], "")
+        self.assertIn("sessionid", response.cookies)
+        # Follow-up GET /me from the same client should be authenticated.
+        me = self.client.get("/api/auth/me")
+        self.assertEqual(me.status_code, 200)
+        self.assertEqual(me.json()["email"], "newbie@example.com")
+
+    def test_signup_duplicate_email_same_case_returns_field_error(self) -> None:
+        User.objects.create_user(
+            email="taken@example.com",
+            password="lighthouse-orbit",
+            display_name="Taken",
+        )
+        csrf = self._seed_csrf()
+        response = self._post_signup(
+            {
+                "email": "taken@example.com",
+                "password": "lighthouse-orbit",
+                "display_name": "Other",
+            },
+            csrf=csrf,
+        )
+        self.assertEqual(response.status_code, 400)
+        details = response.json()["detail"]
+        self.assertTrue(
+            any("email" in entry.get("loc", []) for entry in details),
+            f"expected an `email` field-level error, got: {details!r}",
+        )
+        session_cookie = response.cookies.get("sessionid")
+        self.assertTrue(session_cookie is None or session_cookie.value == "")
+
+    def test_signup_duplicate_email_different_case_returns_field_error(self) -> None:
+        User.objects.create_user(
+            email="taken@example.com",
+            password="lighthouse-orbit",
+            display_name="Taken",
+        )
+        csrf = self._seed_csrf()
+        response = self._post_signup(
+            {
+                "email": "TAKEN@example.com",
+                "password": "lighthouse-orbit",
+                "display_name": "Other",
+            },
+            csrf=csrf,
+        )
+        self.assertEqual(response.status_code, 400)
+        details = response.json()["detail"]
+        self.assertTrue(
+            any("email" in entry.get("loc", []) for entry in details),
+            f"expected an `email` field-level error, got: {details!r}",
+        )
+
+    def test_signup_weak_password_returns_field_error(self) -> None:
+        csrf = self._seed_csrf()
+        response = self._post_signup(
+            {
+                "email": "weak@example.com",
+                "password": "abc",
+                "display_name": "Weak",
+            },
+            csrf=csrf,
+        )
+        self.assertEqual(response.status_code, 400)
+        details = response.json()["detail"]
+        self.assertTrue(
+            any("password" in entry.get("loc", []) for entry in details),
+            f"expected a `password` field-level error, got: {details!r}",
+        )
+
+    def test_signup_allows_duplicate_display_name(self) -> None:
+        csrf = self._seed_csrf()
+        first = self._post_signup(
+            {
+                "email": "first@example.com",
+                "password": "lighthouse-orbit",
+                "display_name": "SameName",
+            },
+            csrf=csrf,
+        )
+        self.assertEqual(first.status_code, 200)
+        # Drop the session cookie so the next request is anonymous; CSRF
+        # rotates on login, so re-seed before posting again.
+        self.client.cookies.pop("sessionid", None)
+        csrf = self._seed_csrf()
+        second = self._post_signup(
+            {
+                "email": "second@example.com",
+                "password": "lighthouse-orbit",
+                "display_name": "SameName",
+            },
+            csrf=csrf,
+        )
+        self.assertEqual(second.status_code, 200)
