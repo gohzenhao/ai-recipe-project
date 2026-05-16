@@ -1,0 +1,3 @@
+# Use Django auth with a custom user model, not Neon Auth
+
+The Neon project hosting this app's database has Neon Auth provisioned, so a future reader looking at the DB will reasonably ask why we are not using it. We chose Django's built-in auth with a custom `AbstractUser` subclass (`api.User`) because keeping identity in Django-owned tables removes the need for token-verification middleware and integrates cleanly with the rest of the Django stack (admin, sessions, permissions, ORM joins to `Recipe`); the `neon_auth.*` schema is left untouched but unused. The custom user further uses email as the unique login identifier, locked in by `USERNAME_FIELD = "email"` — switching this later would require another data migration, so it is settled here.
