@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.contrib.auth import login as django_login
+from django.contrib.auth import logout as django_logout
 from django.core.exceptions import ValidationError
-from django.http import HttpRequest
+from django.http import HttpRequest, HttpResponse
 from django.views.decorators.csrf import ensure_csrf_cookie
 from ninja import Router
 from ninja.decorators import decorate_view
@@ -106,6 +107,15 @@ def _iter_validator_errors(exc: ValidationError):
     """Yield (message, code) pairs from a Django ValidationError."""
     for err in exc.error_list:
         yield err.message % (err.params or ()), err.code
+
+
+# `SessionAuth` enforces both "is logged in" and CSRF on POST, so a stolen
+# `sessionid` cookie without the matching CSRF token cannot log the user out
+# of their other tabs.
+@router.post("/logout", auth=SessionAuth())
+def logout(request: HttpRequest):
+    django_logout(request)
+    return HttpResponse(status=204)
 
 
 # `/me` doubles as the CSRF-cookie seeder for the SPA's cold-load probe —

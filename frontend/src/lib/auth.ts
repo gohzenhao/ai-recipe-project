@@ -27,6 +27,17 @@ export async function signup(payload: SignupPayload): Promise<User> {
   return user
 }
 
+export async function logout(navigate: (path: string) => void): Promise<void> {
+  try {
+    await apiFetch('/auth/logout', { method: 'POST' })
+  } catch {
+    // Even on network/server failure, fall through to clear the client
+    // state — a user clicking logout should never end up half-logged-out.
+  }
+  useAuthStore.getState().clear()
+  navigate('/login')
+}
+
 export async function fetchMe(): Promise<User | null> {
   try {
     const user = await apiFetch<User>('/auth/me', { method: 'GET' })

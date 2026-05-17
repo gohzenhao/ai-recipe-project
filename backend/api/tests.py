@@ -356,3 +356,50 @@ class SignupEndpointTests(TestCase):
             csrf=csrf,
         )
         self.assertEqual(second.status_code, 200)
+
+
+class LogoutEndpointTests(TestCase):
+    def setUp(self) -> None:
+        self.password = "correct-horse-99"
+        self.user = User.objects.create_user(
+            email="alice@example.com",
+            password=self.password,
+            display_name="Alice",
+        )
+        self.client = Client(enforce_csrf_checks=True)
+
+    def _seed_csrf(self) -> str:
+        response = self.client.get("/api/auth/me")
+        self.assertIn("csrftoken", response.cookies)
+        return response.cookies["csrftoken"].value
+
+    def _login_and_get_csrf(self) -> str:
+        csrf = self._seed_csrf()
+        response = self.client.post(
+            "/api/auth/login",
+            data=json.dumps({"email": "alice@example.com", "password": self.password}),
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf,
+        )
+        self.assertEqual(response.status_code, 200)
+        # CSRF rotates on login — re-seed before any further mutating call.
+        return self._seed_csrf()
+
+    def test_logout_authenticated_returns_204_and_invalidates_session(self) -> None:
+        csrf = self._login_and_get_csrf()
+        response = self.client.post(
+            "/api/auth/logout",
+            HTTP_X_CSRFTOKEN=csrf,
+        )
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(response.content, b"")
+        # Server-side invalidation: the same client's next /me must be 401,
+        # not just a client-side cookie wipe.
+        me = self.client.get("/api/auth/me")
+        self.assertEqual(me.status_code, 401)
+
+    def test_logout_without_csrf_header_is_rejected(self) -> None:
+        self._login_and_get_csrf()
+        response = self.client.post("/api/auth/logout")
+        self.assertGreaterEqual(response.status_code, 400)
+        self.assertLess(response.status_code, 500)
