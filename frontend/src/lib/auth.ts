@@ -40,7 +40,13 @@ export async function logout(navigate: (path: string) => void): Promise<void> {
 
 export async function fetchMe(): Promise<User | null> {
   try {
-    const user = await apiFetch<User>('/auth/me', { method: 'GET' })
+    // bounceOn401: false — this probe is informational. A 401 just means
+    // "not logged in" and must not redirect the user off a public page.
+    const user = await apiFetch<User>(
+      '/auth/me',
+      { method: 'GET' },
+      { bounceOn401: false },
+    )
     useAuthStore.getState().setUser(user)
     return user
   } catch (err) {

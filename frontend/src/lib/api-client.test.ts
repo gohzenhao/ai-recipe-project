@@ -67,4 +67,24 @@ describe('apiFetch', () => {
     expect(useAuthStore.getState().user).toBeNull()
     expect(assignSpy).toHaveBeenCalledWith('/login')
   })
+
+  it('with bounceOn401: false, clears the store but does not navigate', async () => {
+    useAuthStore.getState().setUser({
+      id: 1,
+      email: 'a@a',
+      display_name: 'A',
+      avatar_url: '',
+    })
+    const assignSpy = vi.fn()
+    Object.defineProperty(window, 'location', {
+      writable: true,
+      value: { pathname: '/signup', assign: assignSpy },
+    })
+    mockFetch({ ok: false, status: 401, body: '{"detail":"nope"}' })
+    await expect(
+      apiFetch('/auth/me', {}, { bounceOn401: false }),
+    ).rejects.toBeInstanceOf(ApiError)
+    expect(useAuthStore.getState().status).toBe('anon')
+    expect(assignSpy).not.toHaveBeenCalled()
+  })
 })

@@ -24,9 +24,17 @@ export class ApiError extends Error {
   }
 }
 
+export type ApiFetchOptions = {
+  // Opt out of the 401 -> /login bounce. Use for informational probes like
+  // /me where a 401 just means "logged out" and should not yank the user
+  // off a public page (e.g. /signup).
+  bounceOn401?: boolean
+}
+
 export async function apiFetch<T = unknown>(
   path: string,
   init: RequestInit = {},
+  opts: ApiFetchOptions = {},
 ): Promise<T> {
   const url = path.startsWith('http') ? path : `${API_BASE}${path}`
   const headers = new Headers(init.headers)
@@ -48,7 +56,12 @@ export async function apiFetch<T = unknown>(
     useAuthStore.getState().clear()
     // Bounce to login. A full navigation here means feature code never has
     // to repeat the "session expired -> kick to /login" check at call sites.
-    if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+    const shouldBounce = opts.bounceOn401 !== false
+    if (
+      shouldBounce &&
+      typeof window !== 'undefined' &&
+      window.location.pathname !== '/login'
+    ) {
       window.location.assign('/login')
     }
   }

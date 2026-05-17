@@ -123,3 +123,8 @@ TEST_RUNNER = "config.test_runner.NeonDiscoverRunner"
 CORS_ALLOWED_ORIGINS = _env_list("CORS_ALLOWED_ORIGINS", ["http://localhost:5173"])
 CORS_ALLOW_CREDENTIALS = True
 
+# Django checks the Origin header on unsafe methods regardless of HTTPS, so
+# the SPA's cross-origin POSTs (login/signup) need their origin trusted here
+# in addition to CORS_ALLOWED_ORIGINS above.
+CSRF_TRUSTED_ORIGINS = _env_list("CSRF_TRUSTED_ORIGINS", ["http://localhost:5173"])
+
