@@ -34,7 +34,6 @@ export default defineConfig({
       command: 'npm run dev',
       url: FRONTEND_URL,
       reuseExistingServer: !process.env.CI,
-      env: { VITE_API_BASE_URL: `${BACKEND_URL}/api` },
       timeout: 60_000,
     },
   ],
