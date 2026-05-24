@@ -28,3 +28,9 @@ This is a monorepo project that allows users to signup/login and manage their re
 ## Cross-cutting rules
 - Don't hardcode URLs — use env vars
 - Don't commit `.env` files (use `.env.example` for templates)
+
+## Agent skills
+
+### Issue tracker
+
+New issues and PRDs are tracked as GitHub issues in `gohzenhao/ai-recipe-project` via the `gh` CLI. Pre-existing markdown under `docs/prd/` and `docs/issues/` is historical. See `docs/agents/issue-tracker.md`.
