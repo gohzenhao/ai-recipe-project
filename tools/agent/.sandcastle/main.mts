@@ -10,15 +10,16 @@
 //                               reviewer runs in the same sandbox on the same
 //                               branch (1 iteration). All issue pipelines run
 //                               concurrently via Promise.allSettled().
-//   Phase 3 (Open PRs):         For each completed branch, a single agent pushes
-//                               the branch and opens a pull request against the
-//                               base branch. Nothing is merged and no issue is
-//                               closed — a human reviews and merges each PR. The
-//                               agent swaps each issue's `Sandcastle` queue label
-//                               for `in-review` so the planner won't re-pick it.
+//   Phase 3 (Merge):            A single agent merges all completed branches
+//                               into the current branch and closes their issues.
 //
-// The outer loop repeats up to MAX_ITERATIONS times so that issues still in the
-// queue are picked up on the next round.
+// The outer loop repeats up to MAX_ITERATIONS times so that newly unblocked
+// issues are picked up after each round of merges.
+//
+// Note: open-pr-prompt.md is kept in this folder as an alternative Phase 3
+// (push + open PR, no auto-merge, human merges). It is not wired in below — to
+// switch, point `promptFile` at it and pass `TASKS` + `BASE` instead of
+// `BRANCHES` + `ISSUES`.
 //
 // Usage:
 //   npx tsx .sandcastle/main.mts
@@ -205,35 +206,33 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
   }
 
   // -------------------------------------------------------------------------
-  // Phase 3: Open PRs
+  // Phase 3: Merge
   //
-  // One agent pushes each completed branch and opens a pull request against the
-  // base branch. It does NOT merge and does NOT close issues — a human reviews
-  // and merges each PR (the PR body's `Closes #N` closes the issue on merge).
-  // It also swaps each issue's `Sandcastle` label for `in-review` so the planner
-  // won't re-pick an issue that already has an open PR.
+  // One agent merges all completed branches into the current branch, resolving
+  // any conflicts and running the per-layer checks. After a successful merge it
+  // closes each issue via `gh issue close`.
   //
-  // The {{TASKS}} argument maps each branch to its issue (id + title) so the
-  // agent can write the correct `Closes #N` line; {{BASE}} is the PR base branch.
+  // {{BRANCHES}} is a markdown list of branch names; {{ISSUES}} is a markdown
+  // list of `id: title` pairs the agent uses to close issues after merging.
   // -------------------------------------------------------------------------
   await sandcastle.run({
     hooks,
     sandbox: docker(),
-    name: "pr-opener",
+    name: "merger",
     maxIterations: 1,
     agent: sandcastle.claudeCode("claude-opus-4-7"),
-    promptFile: "./.sandcastle/open-pr-prompt.md",
+    promptFile: "./.sandcastle/merge-prompt.md",
     promptArgs: {
-      // One line per completed issue: issue id, title, and its branch.
-      TASKS: completedIssues
-        .map((i) => `- Issue #${i.id} — "${i.title}" → branch \`${i.branch}\``)
+      // A markdown list of branch names, one per line.
+      BRANCHES: completedBranches.map((b) => `- ${b}`).join("\n"),
+      // A markdown list of issue IDs and titles, one per line.
+      ISSUES: completedIssues
+        .map((i) => `- ${i.id}: ${i.title}`)
         .join("\n"),
-      // The branch every PR is opened against.
-      BASE: "master",
     },
   });
 
-  console.log("\nPull requests opened.");
+  console.log("\nBranches merged.");
 }
 
 console.log("\nAll done.");
