@@ -1,0 +1,12 @@
+{
+  "name": "ai-recipe-project",
+  "private": true,
+  "description": "Repo-root npm project for sandcastle (the agent orchestrator under .sandcastle/). The frontend/ and backend/ apps have their own package managers (npm in frontend/, uv in backend/) and are unaffected.",
+  "scripts": {
+    "sandcastle": "tsx .sandcastle/main.mts"
+  },
+  "devDependencies": {
+    "@ai-hero/sandcastle": "^0.5.11",
+    "tsx": "^4.20.0"
+  }
+}

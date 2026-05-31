@@ -26,12 +26,23 @@
 // Or add to package.json:
 //   "scripts": { "sandcastle": "npx tsx .sandcastle/main.mts" }
 
+import * as path from "node:path";
 import * as sandcastle from "@ai-hero/sandcastle";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
 
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
+
+// Host repo root. This script lives at `<repo_root>/.sandcastle/main.mts`,
+// so the repo root is one directory above this file. We pass this to every
+// sandcastle call as `cwd` so the script works regardless of where it was
+// invoked from — sandcastle uses `process.cwd()` as the git anchor by
+// default, and we'd rather not depend on the user's current directory.
+// (`promptFile` is still resolved against `process.cwd()` per the
+// sandcastle API; for the `./.sandcastle/*.md` paths below, invoke from
+// the repo root.)
+const HOST_REPO_DIR = path.resolve(import.meta.dirname, "..");
 
 // Maximum number of plan→execute→merge cycles before stopping.
 // Raise this if your backlog is large; lower it for a quick smoke-test run.
@@ -73,6 +84,7 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
   // It outputs a <plan> JSON block — we parse that to drive Phase 2.
   // -------------------------------------------------------------------------
   const plan = await sandcastle.run({
+    cwd: HOST_REPO_DIR,
     hooks,
     sandbox: docker(),
     name: "planner",
@@ -123,6 +135,7 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
   const settled = await Promise.allSettled(
     issues.map(async (issue) => {
       const sandbox = await sandcastle.createSandbox({
+        cwd: HOST_REPO_DIR,
         branch: issue.branch,
         sandbox: docker(),
         hooks,
@@ -216,6 +229,7 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
   // list of `id: title` pairs the agent uses to close issues after merging.
   // -------------------------------------------------------------------------
   await sandcastle.run({
+    cwd: HOST_REPO_DIR,
     hooks,
     sandbox: docker(),
     name: "merger",
