@@ -21,6 +21,19 @@ def _make_user(email: str) -> User:
     )
 
 
+def _login(client: Client, email: str, password: str = "correct-horse-99") -> None:
+    """Seed CSRF, log in as `email`. Mirrors the auth_endpoint test helper."""
+    response = client.get("/api/auth/me")
+    csrf = response.cookies["csrftoken"].value
+    response = client.post(
+        "/api/auth/login",
+        data=json.dumps({"email": email, "password": password}),
+        content_type="application/json",
+        HTTP_X_CSRFTOKEN=csrf,
+    )
+    assert response.status_code == 200, response.content
+
+
 class ListRecipesOwnerFilterTests(TestCase):
     def test_returns_only_recipes_owned_by_the_given_owner(self) -> None:
         alice = _make_user("alice@example.com")
@@ -141,19 +154,6 @@ class RecipesListEndpointAuthTests(TestCase):
         client = Client(enforce_csrf_checks=True)
         response = client.get("/api/recipes/")
         self.assertEqual(response.status_code, 401)
-
-
-def _login(client: Client, email: str, password: str = "correct-horse-99") -> None:
-    """Seed CSRF, log in as `email`. Mirrors the auth_endpoint test helper."""
-    response = client.get("/api/auth/me")
-    csrf = response.cookies["csrftoken"].value
-    response = client.post(
-        "/api/auth/login",
-        data=json.dumps({"email": email, "password": password}),
-        content_type="application/json",
-        HTTP_X_CSRFTOKEN=csrf,
-    )
-    assert response.status_code == 200, response.content
 
 
 class RecipesListEndpointHappyPathTests(TestCase):
