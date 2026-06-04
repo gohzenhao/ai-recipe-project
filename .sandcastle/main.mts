@@ -6,10 +6,13 @@
 //                               listing unblocked issues with branch names.
 //   Phase 2 (Execute + Review): For each issue, a sandbox is created via
 //                               createSandbox(). The implementer runs first
-//                               (100 iterations). If it produces commits, a
-//                               reviewer runs in the same sandbox on the same
-//                               branch (1 iteration). All issue pipelines run
-//                               concurrently via Promise.allSettled().
+//                               (up to 50 iterations, exits early on
+//                               <promise>COMPLETE</promise> or
+//                               <promise>BLOCKED</promise>). If it produced
+//                               commits, a reviewer runs in the same sandbox
+//                               on the same branch (1 iteration). All issue
+//                               pipelines run concurrently via
+//                               Promise.allSettled().
 //   Phase 3 (Merge):            A single agent merges all completed branches
 //                               into the current branch and closes their issues.
 //
@@ -44,9 +47,12 @@ import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
 // the repo root.)
 const HOST_REPO_DIR = path.resolve(import.meta.dirname, "..");
 
-// Maximum number of plan→execute→merge cycles before stopping.
-// Raise this if your backlog is large; lower it for a quick smoke-test run.
-const MAX_ITERATIONS = 10;
+// Maximum number of plan→execute→merge cycles before stopping. Keep this
+// small (2-3) while you're still validating the loop end-to-end — the
+// natural empty-plan exit handles "nothing left to do" anyway, so the cap
+// only matters when something is going wrong and the planner keeps
+// re-picking the same un-closed issue. Raise once you trust the loop.
+const MAX_ITERATIONS = 3;
 
 // Hooks run inside the sandbox once it's ready, before the agent starts.
 // This is a monorepo with no root package.json, so install per workspace:
@@ -65,7 +71,12 @@ const hooks = {
 // Seed the frontend's node_modules from the host so the npm install hook only
 // has to top up (node_modules is gitignored, so it isn't in the worktree).
 // The backend's .venv is recreated by `uv sync` above.
-const copyToWorktree = ["frontend/node_modules"];
+//
+// backend/.env carries DATABASE_URL + DJANGO_SECRET_KEY (no defaults in
+// settings.py). Without it, every `manage.py` invocation in the sandbox
+// dies with KeyError before tests can run. .env is gitignored at the repo
+// root, so the agent can't accidentally commit it from inside the worktree.
+const copyToWorktree = ["frontend/node_modules", "backend/.env"];
 
 // ---------------------------------------------------------------------------
 // Main loop
@@ -143,12 +154,27 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
       });
 
       try {
-        // Run the implementer
+        // Run the implementer.
+        //
+        // maxIterations is the hard ceiling; in practice the agent should
+        // exit early via one of the completion signals below.
+        //
+        // <promise>COMPLETE</promise> — work is done.
+        // <promise>BLOCKED</promise> — the agent has hit an environmental
+        // blocker it cannot resolve (missing env, missing system package,
+        // contradicting requirements, no DB for tests, etc.) and is bailing
+        // intentionally rather than burning iterations. See the BAILING OUT
+        // section of implement-prompt.md for when the agent should emit
+        // BLOCKED.
         const implement = await sandbox.run({
           name: "implementer",
-          maxIterations: 100,
+          maxIterations: 50,
           agent: sandcastle.claudeCode("claude-opus-4-7"),
           promptFile: "./.sandcastle/implement-prompt.md",
+          completionSignal: [
+            "<promise>COMPLETE</promise>",
+            "<promise>BLOCKED</promise>",
+          ],
           promptArgs: {
             TASK_ID: issue.id,
             ISSUE_TITLE: issue.title,
