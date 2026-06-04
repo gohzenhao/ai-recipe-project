@@ -16,7 +16,16 @@ import {
   cycleSort,
   sortDirectionFor,
   type SortableColumn,
+  type SortDirection,
 } from '@/lib/recipes-sort'
+
+type AriaSort = 'ascending' | 'descending' | 'none'
+
+function ariaSortFor(direction: SortDirection): AriaSort {
+  if (direction === 'asc') return 'ascending'
+  if (direction === 'desc') return 'descending'
+  return 'none'
+}
 
 export type RecipesTableProps = {
   rows: RecipeListRow[]
@@ -46,10 +55,8 @@ function SortableHeader({
   className,
 }: SortableHeaderProps) {
   const direction = sortDirectionFor(sort, column)
-  const ariaSort =
-    direction === 'asc' ? 'ascending' : direction === 'desc' ? 'descending' : 'none'
   return (
-    <TableHead aria-sort={ariaSort} className={className}>
+    <TableHead aria-sort={ariaSortFor(direction)} className={className}>
       <button
         type="button"
         onClick={() => onSortChange(cycleSort(sort, column))}
