@@ -1,9 +1,43 @@
+import { useSearchParams } from 'react-router'
 import { RecipesTable } from '@/components/RecipesTable'
+import { TablePagination } from '@/components/TablePagination'
 import { Button } from '@/components/ui/button'
 import { useRecipesList } from '@/hooks/use-recipes-list'
+import {
+  DEFAULT_RECIPE_PAGE,
+  DEFAULT_RECIPE_SORT,
+  type RecipeSort,
+} from '@/lib/recipes-query'
 
 export function Recipes() {
-  const { items, isLoading, error, refetch } = useRecipesList()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const { items, total, page, perPage, sort, isLoading, error, refetch } =
+    useRecipesList()
+
+  // Mutate the URL through React Router so the address bar is the single
+  // source of truth for sort/page. Drop params that match the defaults so
+  // the URL stays clean (`/recipes` instead of `/recipes?sort=-updated_at&page=1`).
+  const updateParams = (patch: { sort?: RecipeSort; page?: number }) => {
+    const next = new URLSearchParams(searchParams)
+    if (patch.sort !== undefined) {
+      if (patch.sort === DEFAULT_RECIPE_SORT) next.delete('sort')
+      else next.set('sort', patch.sort)
+    }
+    if (patch.page !== undefined) {
+      if (patch.page === DEFAULT_RECIPE_PAGE) next.delete('page')
+      else next.set('page', String(patch.page))
+    }
+    setSearchParams(next)
+  }
+
+  const handleSortChange = (nextSort: RecipeSort) => {
+    // Changing sort resets the page so users don't land on an empty tail.
+    updateParams({ sort: nextSort, page: DEFAULT_RECIPE_PAGE })
+  }
+
+  const handlePageChange = (nextPage: number) => {
+    updateParams({ page: nextPage })
+  }
 
   const renderBody = () => {
     if (isLoading) return <RecipesTableSkeleton />
@@ -29,7 +63,21 @@ export function Recipes() {
         </p>
       )
     }
-    return <RecipesTable rows={items} />
+    return (
+      <div className="flex flex-col gap-4">
+        <RecipesTable
+          rows={items}
+          sort={sort}
+          onSortChange={handleSortChange}
+        />
+        <TablePagination
+          page={page}
+          perPage={perPage}
+          total={total}
+          onPageChange={handlePageChange}
+        />
+      </div>
+    )
   }
 
   return (
